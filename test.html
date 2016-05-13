@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Test 2 WebRTC</title>
+	<script src="http://cdn.peerjs.com/0.3/peer.js"></script>
+</head>
+<body>
+<script type="text/javascript">
+	var http = new XMLHttpRequest();
+	var connectedPeers={};
+	var ID;
+
+	var peer = new Peer({host:'192.168.1.103',port:8080});
+		peer.on('open',function(id){
+			console.log('My peer ID is: ' + id);
+			ID = id;
+		});
+
+	peer.on('connection',connect);
+
+	function connect(c){
+		c.on('data',function(data){
+
+		});
+		c.on('close',function(){
+			console.log('connexion rompue avec '+c.peer);
+			delete connectedPeers[c.peer];
+		});
+		connectedPeers[c.peer]=1;
+	}
+
+	function Open(name){
+
+	}
+
+	function Send(name,message){
+		
+	}
+</script>
+
+</body>
+</html>
