@@ -1,12 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<title>Test 2 WebRTC</title>
-	<script src="http://cdn.peerjs.com/0.3/peer.js"></script>
-	<script src="node_modules/lodash/lodash.js"></script>
-	<script src="node_modules/node-uuid/uuid.js"></script>
+	<title>Test 2 WebRTC</title>	
 </head>
+
 <body>
+
+<script src="http://cdn.peerjs.com/0.3/peer.js"></script>
+<script src="node_modules/lodash/lodash.js"></script>
+<script src="node_modules/node-uuid/uuid.js"></script>
+<script src="./Events.js"></script>
+
 <script type="text/javascript">
 	var http = new XMLHttpRequest();
 	var connectedPeers={};
@@ -14,13 +18,19 @@
 	var Communautes=[];
 	var Messages=[];
 
+	function Tchat(){}
+
+	Tchat.prototype = Object.create(window.EventEmitter.prototype);
+
 	var peer = new Peer({host:'192.168.1.102',port:8080});
-		peer.on('open',function(id){
-			console.log('My peer ID is: ' + id);
-			ID = id;
-		});
+	peer.on('open',function(id){
+		console.log('My peer ID is: ' + id);
+		ID = id;
+	});
 
 	peer.on('connection',connect);
+
+	var tchat = new Tchat();
 
 	function connect(c){
 		c.on('data',function(data){
@@ -40,10 +50,12 @@
 				}
 				
 			}
+			tchat.emit('message',data);
 			console.log('message reçu de',c.peer,':',data);
 		});
 		c.on('close',function(){
-			console.log('connexion rompue avec '+c.peer);
+			console.log('connection fermée avec',c.peer);
+			tchat.emit('deconnection','@'+c.peer);
 			delete connectedPeers[c.peer];
 		});
 		connectedPeers[c.peer]=1;
@@ -84,7 +96,8 @@
 		if(!connectedPeers[name]){
 			var c=peer.connect(name);
 			c.on('open', function() {
-				console.log('connection ouverte');
+				console.log('connection ouverte avec',name);
+				tchat.emit('connection','@'name);
 				connect(c);
 
 				c.on('error',function(err){
@@ -111,7 +124,9 @@
 					var group = new Group(name);
 					group.addMessage(msg);
 					Messages.push(group);
-				}else{M.addMessage(msg);}
+				}else{
+					M.addMessage(msg);
+				}
 			}else{
 				Open('@'+name);
 				console.log("La connection n'est pas encore ouverte, veuillez réessayer plus tard");
@@ -129,7 +144,9 @@
 					var group = new Group(name);
 					group.addMessage(msg);
 					Messages.push(group);
-				}else{M.addMessage(msg);}
+				}else{
+					M.addMessage(msg);
+				}
 			}else{
 				Open(name);
 				console.log("La connection n'est pas encore ouverte, veuillez réessayer plus tard");
@@ -145,6 +162,12 @@
 	Group.prototype.addMessage=function(msg){
 		this.msgs.push(msg);
 	};
+
+	window.onunload = window.onbeforeunload = function(e) {
+			if (!!peer && !peer.destroyed) {
+				peer.destroy();
+			}
+		};
 </script>
 
 </body>
