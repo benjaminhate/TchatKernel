@@ -1,0 +1,20 @@
+{
+  "name": "tchatkernel",
+  "version": "1.0.0",
+  "description": "le coeur du tchat de kaaarot",
+  "main": "test.js",
+  "dependencies": {
+    "peer": "^0.2.8",
+    "lodash": "^4.12.0",
+    "node-uuid": "^1.4.7",
+    "crypto": "^0.0.3",
+    "peerjs": "^0.3.14",
+    "jssha": "^2.0.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
