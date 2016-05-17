@@ -17,10 +17,22 @@
 	var ID;
 	var Communautes=[];
 	var Messages=[];
+	var limite = 200;
 
 	function Tchat(){}
 
 	Tchat.prototype = Object.create(window.EventEmitter.prototype);
+
+	function Message(dest,msg,sender){
+		this.destination=dest;
+		this.msg=msg;
+		this.sender=sender;
+		this.time=Date.now();
+		this.signature=uuid.v4(this);
+		return this
+	}
+
+	Message.prototype=Object.create(window.Object.prototype);
 
 	var peer = new Peer({host:'192.168.1.102',port:8080});
 	peer.on('open',function(id){
@@ -32,12 +44,37 @@
 
 	var tchat = new Tchat();
 
+	setInterval(connected,1000);
+
+	setInterval(GroupList,2000);
+
+	function connected(){
+		Communautes.forEach((el)=>{if(el.connectes.length<limite) Send(el.name,'636f6e6e656374e9')});
+	}
+
+	function GroupList(){
+		Communautes.forEach((communaute)=>{
+			if(communaute.connectes.length<limite){
+				tchat.emit(communaute.name,communaute.connectes);
+			}else{
+				tchat.emit(communaute.name,'Groupe trop grand');
+			}
+		});
+	}
+
 	function connect(c){
 		c.on('data',function(data){
 			if(data.destination.charAt(0)=='#'){
+				if(data.msg=='636f6e6e656374e9'){
+					var group=_.find(Communautes,(el)=>el.name==data.destination);
+					if(group && !_.find(group.connectes,(el)=>el==data.sender)){
+						group.connectes.push(data.sender);
+					}
+				}else{console.log('message reçu de',c.peer,':',data);}
+					
 				var M = Messages.find((el)=>el.id==data.destination);
 				if(M){
-					var m = Messages.find((el)=>el.id==data.destination).msgs.find((el)=>_.isEqual(el,data));
+					var m = M.msgs.find((el)=>_.isEqual(el,data));
 					if(!m){
 						_.forEach(peer.connections,(el)=>el[0].send(data));
 						M.addMessage(data);
@@ -48,14 +85,15 @@
 					group.addMessage(data);
 					Messages.push(group);
 				}
-				
+			}else{
+				console.log('message reçu de',c.peer,':',data);
 			}
 			tchat.emit('message',data);
-			console.log('message reçu de',c.peer,':',data);
 		});
 		c.on('close',function(){
 			console.log('connection fermée avec',c.peer);
 			tchat.emit('deconnection','@'+c.peer);
+			Communautes.forEach(group => { _.remove(group.connectes, el=>el==c.peer)});
 			delete connectedPeers[c.peer];
 		});
 		connectedPeers[c.peer]=1;
@@ -65,7 +103,7 @@
 		if(name.charAt(0)=='@') name = name.replace('@','');
 		if(name.charAt(0)=='#'){
 			name = name.toLowerCase();
-			Communautes.push(name);
+			Communautes.push({name:name,connectes:[]});
 			name = name.replace('#','%23');
 			http.open('GET','/send/'+name+'/'+ID);
 			http.send();
@@ -97,7 +135,7 @@
 			var c=peer.connect(name);
 			c.on('open', function() {
 				console.log('connection ouverte avec',name);
-				tchat.emit('connection','@'name);
+				tchat.emit('connection','@'+name);
 				connect(c);
 
 				c.on('error',function(err){
@@ -110,22 +148,22 @@
 	}
 
 	function Send(name,message){
-		var msg = {destination:name,msg:message,sender:ID,time:Date.now()};
-		var sign = uuid.v4(msg);
-		msg.signature = sign;
+		var msg = new Message(name,message,ID);
 		if(name.charAt(0)=='@'){
 			name = name.replace('@','');
 			var connections = peer.connections[name];
 			if(connections){
 				connections[0].send(msg);
-				console.log('message envoyé à',name,':',msg);
-				var M = Messages.find((el)=>el.id==name);
-				if(!M){
-					var group = new Group(name);
-					group.addMessage(msg);
-					Messages.push(group);
-				}else{
-					M.addMessage(msg);
+				if(message!='636f6e6e656374e9'){
+					console.log('message envoyé à',name,':',msg);
+					var M = Messages.find((el)=>el.id==name);
+					if(!M){
+						var group = new Group(name);
+						group.addMessage(msg);
+						Messages.push(group);
+					}else{
+						M.addMessage(msg);
+					}
 				}
 			}else{
 				Open('@'+name);
@@ -134,18 +172,19 @@
 		}
 
 		if(name.charAt(0)=='#'){
-			var group = Communautes.find((el)=>el==name);
-			console.log('group',group);
+			var group = _.find(Communautes,(el)=>el.name==name);
 			if(group){
-				_.forEach(peer.connections,(el)=>el[0].send(msg));
-				console.log('message envoyé à',name,':',msg);
-				var M = Messages.find((el)=>el.id==name);
-				if(!M){
-					var group = new Group(name);
-					group.addMessage(msg);
-					Messages.push(group);
-				}else{
-					M.addMessage(msg);
+				_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(msg)});
+				if(message!='636f6e6e656374e9'){
+					console.log('message envoyé à',name,':',msg);
+					var M = Messages.find((el)=>el.id==name);
+					if(!M){
+						var group = new Group(name);
+						group.addMessage(msg);
+						Messages.push(group);
+					}else{
+						M.addMessage(msg);
+					}
 				}
 			}else{
 				Open(name);
