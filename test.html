@@ -3,14 +3,18 @@
 <head>
 	<title>Test 2 WebRTC</title>
 	<script src="http://cdn.peerjs.com/0.3/peer.js"></script>
+	<script src="node_modules/lodash/lodash.js"></script>
+	<script src="node_modules/node-uuid/uuid.js"></script>
 </head>
 <body>
 <script type="text/javascript">
 	var http = new XMLHttpRequest();
 	var connectedPeers={};
 	var ID;
+	var Communautes=[];
+	var Messages=[];
 
-	var peer = new Peer({host:'192.168.1.103',port:8080});
+	var peer = new Peer({host:'192.168.1.102',port:8080});
 		peer.on('open',function(id){
 			console.log('My peer ID is: ' + id);
 			ID = id;
@@ -20,7 +24,23 @@
 
 	function connect(c){
 		c.on('data',function(data){
-
+			if(data.destination.charAt(0)=='#'){
+				var M = Messages.find((el)=>el.id==data.destination);
+				if(M){
+					var m = Messages.find((el)=>el.id==data.destination).msgs.find((el)=>_.isEqual(el,data));
+					if(!m){
+						_.forEach(peer.connections,(el)=>el[0].send(data));
+						M.addMessage(data);
+					}
+				}else{
+					_.forEach(peer.connections,(el)=>el[0].send(data));
+					var group = new Group(data.destination);
+					group.addMessage(data);
+					Messages.push(group);
+				}
+				
+			}
+			console.log('message reçu de',c.peer,':',data);
 		});
 		c.on('close',function(){
 			console.log('connexion rompue avec '+c.peer);
@@ -30,12 +50,101 @@
 	}
 
 	function Open(name){
+		if(name.charAt(0)=='@') name = name.replace('@','');
+		if(name.charAt(0)=='#'){
+			name = name.toLowerCase();
+			Communautes.push(name);
+			name = name.replace('#','%23');
+			http.open('GET','/send/'+name+'/'+ID);
+			http.send();
+			http.onload = function(){
+				var Clients=JSON.parse(http.response);
+				var i=0;
+				var Connections=[];
+				for(key in connectedPeers){
+					Connections.push(key);
 
+				}
+				var Diff = _.difference(Clients,Connections,[ID]);
+				if(Diff.length>=2){
+					while(i!=2){
+						var random = Math.round(Math.random()*(Clients.length-1));
+						if(ID!=Clients[random] && !connectedPeers[Clients[random]]){
+							Open('@'+Clients[random]);
+							i++;
+						}
+					}
+				}
+				if(Diff.length==1){
+					Open('@'+Diff[0]);
+				}
+				
+			}
+		};
+		if(!connectedPeers[name]){
+			var c=peer.connect(name);
+			c.on('open', function() {
+				console.log('connection ouverte');
+				connect(c);
+
+				c.on('error',function(err){
+					console.log(err);
+				});
+
+			});
+			connectedPeers[name]=1;
+		}
 	}
 
 	function Send(name,message){
-		
+		var msg = {destination:name,msg:message,sender:ID,time:Date.now()};
+		var sign = uuid.v4(msg);
+		msg.signature = sign;
+		if(name.charAt(0)=='@'){
+			name = name.replace('@','');
+			var connections = peer.connections[name];
+			if(connections){
+				connections[0].send(msg);
+				console.log('message envoyé à',name,':',msg);
+				var M = Messages.find((el)=>el.id==name);
+				if(!M){
+					var group = new Group(name);
+					group.addMessage(msg);
+					Messages.push(group);
+				}else{M.addMessage(msg);}
+			}else{
+				Open('@'+name);
+				console.log("La connection n'est pas encore ouverte, veuillez réessayer plus tard");
+			}
+		}
+
+		if(name.charAt(0)=='#'){
+			var group = Communautes.find((el)=>el==name);
+			console.log('group',group);
+			if(group){
+				_.forEach(peer.connections,(el)=>el[0].send(msg));
+				console.log('message envoyé à',name,':',msg);
+				var M = Messages.find((el)=>el.id==name);
+				if(!M){
+					var group = new Group(name);
+					group.addMessage(msg);
+					Messages.push(group);
+				}else{M.addMessage(msg);}
+			}else{
+				Open(name);
+				console.log("La connection n'est pas encore ouverte, veuillez réessayer plus tard");
+			}
+		}
+
 	}
+
+	function Group(name){
+		this.id=name;
+		this.msgs=[];
+	}
+	Group.prototype.addMessage=function(msg){
+		this.msgs.push(msg);
+	};
 </script>
 
 </body>
