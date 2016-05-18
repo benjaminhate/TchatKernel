@@ -17,7 +17,7 @@
 	var ID;
 	var Communautes=[];
 	var Messages=[];
-	var limite = 200;
+	var limite = 20;
 
 	function Tchat(){}
 
@@ -59,34 +59,34 @@
 			}else{
 				tchat.emit(communaute.name,'Groupe trop grand');
 			}
+			communaute.connectes.length=0;
 		});
 	}
 
 	function connect(c){
 		c.on('data',function(data){
+			//console.log('message reçu de',c.peer,':',data);
 			if(data.destination.charAt(0)=='#'){
 				if(data.msg=='636f6e6e656374e9'){
 					var group=_.find(Communautes,(el)=>el.name==data.destination);
 					if(group && !_.find(group.connectes,(el)=>el==data.sender)){
 						group.connectes.push(data.sender);
 					}
-				}else{console.log('message reçu de',c.peer,':',data);}
+				}
 					
 				var M = Messages.find((el)=>el.id==data.destination);
 				if(M){
 					var m = M.msgs.find((el)=>_.isEqual(el,data));
 					if(!m){
-						_.forEach(peer.connections,(el)=>el[0].send(data));
+						_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(data)});
 						M.addMessage(data);
 					}
 				}else{
-					_.forEach(peer.connections,(el)=>el[0].send(data));
+					_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(data)});
 					var group = new Group(data.destination);
 					group.addMessage(data);
 					Messages.push(group);
 				}
-			}else{
-				console.log('message reçu de',c.peer,':',data);
 			}
 			tchat.emit('message',data);
 		});
@@ -100,7 +100,6 @@
 	}
 
 	function Open(name){
-		if(name.charAt(0)=='@') name = name.replace('@','');
 		if(name.charAt(0)=='#'){
 			name = name.toLowerCase();
 			Communautes.push({name:name,connectes:[]});
@@ -131,19 +130,22 @@
 				
 			}
 		};
-		if(!connectedPeers[name]){
-			var c=peer.connect(name);
-			c.on('open', function() {
-				console.log('connection ouverte avec',name);
-				tchat.emit('connection','@'+name);
-				connect(c);
+		if(name.charAt(0)=='@'){
+			name = name.replace('@','');
+			if(!connectedPeers[name]){
+				var c=peer.connect(name);
+				c.on('open', function() {
+					console.log('connection ouverte avec',name);
+					tchat.emit('connection','@'+name);
+					connect(c);
 
-				c.on('error',function(err){
-					console.log(err);
+					c.on('error',function(err){
+						console.log(err);
+					});
+
 				});
-
-			});
-			connectedPeers[name]=1;
+				connectedPeers[name]=1;
+			}
 		}
 	}
 
@@ -152,7 +154,7 @@
 		if(name.charAt(0)=='@'){
 			name = name.replace('@','');
 			var connections = peer.connections[name];
-			if(connections){
+			if(connections && connections[0].open){
 				connections[0].send(msg);
 				if(message!='636f6e6e656374e9'){
 					console.log('message envoyé à',name,':',msg);
