@@ -23,17 +23,6 @@
 
 	Tchat.prototype = Object.create(window.EventEmitter.prototype);
 
-	function Message(dest,msg,sender){
-		this.destination=dest;
-		this.msg=msg;
-		this.sender=sender;
-		this.time=Date.now();
-		this.signature=uuid.v4(this);
-		return this
-	}
-
-	Message.prototype=Object.create(window.Object.prototype);
-
 	var peer = new Peer({host:'192.168.1.102',port:8080});
 	peer.on('open',function(id){
 		console.log('My peer ID is: ' + id);
@@ -73,19 +62,21 @@
 						group.connectes.push(data.sender);
 					}
 				}
-					
-				var M = Messages.find((el)=>el.id==data.destination);
-				if(M){
-					var m = M.msgs.find((el)=>_.isEqual(el,data));
-					if(!m){
+
+				if(Communautes.find((group)=>group.name==data.destination)){
+					var M = Messages.find((el)=>el.id==data.destination);
+					if(M){
+						var m = M.msgs.find((el)=>_.isEqual(el,data));
+						if(!m){
+							_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(data)});
+							M.addMessage(data);
+						}
+					}else{
 						_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(data)});
-						M.addMessage(data);
+						var group = new Group(data.destination);
+						group.addMessage(data);
+						Messages.push(group);
 					}
-				}else{
-					_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(data)});
-					var group = new Group(data.destination);
-					group.addMessage(data);
-					Messages.push(group);
 				}
 			}
 			tchat.emit('message',data);
@@ -108,26 +99,10 @@
 			http.send();
 			http.onload = function(){
 				var Clients=JSON.parse(http.response);
-				var i=0;
-				var Connections=[];
-				for(key in connectedPeers){
-					Connections.push(key);
-
-				}
+				var Connections = _.keys(connectedPeers);
 				var Diff = _.difference(Clients,Connections,[ID]);
-				if(Diff.length>=2){
-					while(i!=2){
-						var random = Math.round(Math.random()*(Clients.length-1));
-						if(ID!=Clients[random] && !connectedPeers[Clients[random]]){
-							Open('@'+Clients[random]);
-							i++;
-						}
-					}
-				}
-				if(Diff.length==1){
-					Open('@'+Diff[0]);
-				}
-				
+
+				_.times(Diff.length, ()=>Open('@'+_.sample(Diff)));
 			}
 		};
 		if(name.charAt(0)=='@'){
@@ -139,9 +114,7 @@
 					tchat.emit('connection','@'+name);
 					connect(c);
 
-					c.on('error',function(err){
-						console.log(err);
-					});
+					c.on('error', console.log.bind(console));
 
 				});
 				connectedPeers[name]=1;
@@ -200,15 +173,27 @@
 		this.id=name;
 		this.msgs=[];
 	}
+
 	Group.prototype.addMessage=function(msg){
 		this.msgs.push(msg);
 	};
 
+	function Message(dest,msg,sender){
+		this.destination=dest;
+		this.msg=msg;
+		this.sender=sender;
+		this.time=Date.now();
+		this.signature=uuid.v4(this);
+		return this
+	}
+
+	Message.prototype=Object.create(window.Object.prototype);
+
 	window.onunload = window.onbeforeunload = function(e) {
-			if (!!peer && !peer.destroyed) {
-				peer.destroy();
-			}
-		};
+		if (!!peer && !peer.destroyed) {
+			peer.destroy();
+		}
+	};
 </script>
 
 </body>
