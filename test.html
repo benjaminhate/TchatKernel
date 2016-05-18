@@ -16,7 +16,6 @@
 	var connectedPeers={};
 	var ID;
 	var Communautes=[];
-	var Messages=[];
 	var limite = 20;
 
 	function Tchat(){}
@@ -35,13 +34,13 @@
 
 	setInterval(connected,1000);
 
-	setInterval(GroupList,2000);
+	setInterval(grouplist,2000);
 
 	function connected(){
-		Communautes.forEach((el)=>{if(el.connectes.length<limite) Send(el.name,'636f6e6e656374e9')});
+		Communautes.forEach((el)=>{if(el.connectes.length<limite) send(el.name,'636f6e6e656374e9')});
 	}
 
-	function GroupList(){
+	function grouplist(){
 		Communautes.forEach((communaute)=>{
 			if(communaute.connectes.length<limite){
 				tchat.emit(communaute.name,communaute.connectes);
@@ -54,31 +53,24 @@
 
 	function connect(c){
 		c.on('data',function(data){
-			//console.log('message reçu de',c.peer,':',data);
 			if(data.destination.charAt(0)=='#'){
 				if(data.msg=='636f6e6e656374e9'){
 					var group=_.find(Communautes,(el)=>el.name==data.destination);
 					if(group && !_.find(group.connectes,(el)=>el==data.sender)){
 						group.connectes.push(data.sender);
 					}
+				}else{
+					console.log('message reçu de',c.peer,':',data);
 				}
-
-				if(Communautes.find((group)=>group.name==data.destination)){
-					var M = Messages.find((el)=>el.id==data.destination);
-					if(M){
-						var m = M.msgs.find((el)=>_.isEqual(el,data));
-						if(!m){
-							_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(data)});
-							M.addMessage(data);
-						}
-					}else{
+				var M = Communautes.find((group)=>group.name==data.destination)
+				if(M){
+					var m = M.msgs.find((el)=>el.signature==data.signature);
+					if(!m){
 						_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(data)});
-						var group = new Group(data.destination);
-						group.addMessage(data);
-						Messages.push(group);
+						M.addMessage(data);
 					}
 				}
-			}
+			}else{console.log('message reçu de',c.peer,':',data);}
 			tchat.emit('message',data);
 		});
 		c.on('close',function(){
@@ -90,20 +82,21 @@
 		connectedPeers[c.peer]=1;
 	}
 
-	function Open(name){
+	function open(name){
+		name = name.toLowerCase();
 		if(name.charAt(0)=='#'){
-			name = name.toLowerCase();
-			Communautes.push({name:name,connectes:[]});
-			name = name.replace('#','%23');
-			http.open('GET','/send/'+name+'/'+ID);
-			http.send();
-			http.onload = function(){
-				var Clients=JSON.parse(http.response);
-				var Connections = _.keys(connectedPeers);
-				var Diff = _.difference(Clients,Connections,[ID]);
-
-				_.times(Diff.length, ()=>Open('@'+_.sample(Diff)));
-			}
+			if(!Communautes.find((group)=>group.name==name)){
+				Communautes.push(new Group(name));
+				name = name.replace('#','%23');
+				http.open('GET','/send/'+name+'/'+ID);
+				http.send();
+				http.onload = function(){
+					var Clients=JSON.parse(http.response);
+					var Connections = _.keys(connectedPeers);
+					var Diff = _.difference(Clients,Connections,[ID]);
+					_.times(Diff.length, ()=>open('@'+_.sample(Diff)));
+				}
+			}else{console.log('Vous êtes déjà connecté au groupe',name);}
 		};
 		if(name.charAt(0)=='@'){
 			name = name.replace('@','');
@@ -122,7 +115,8 @@
 		}
 	}
 
-	function Send(name,message){
+	function send(name,message){
+		name = name.toLowerCase();
 		var msg = new Message(name,message,ID);
 		if(name.charAt(0)=='@'){
 			name = name.replace('@','');
@@ -131,17 +125,17 @@
 				connections[0].send(msg);
 				if(message!='636f6e6e656374e9'){
 					console.log('message envoyé à',name,':',msg);
-					var M = Messages.find((el)=>el.id==name);
+					var M = Communautes.find((el)=>el.name==name);
 					if(!M){
 						var group = new Group(name);
 						group.addMessage(msg);
-						Messages.push(group);
+						Communautes.push(group);
 					}else{
 						M.addMessage(msg);
 					}
 				}
 			}else{
-				Open('@'+name);
+				open('@'+name);
 				console.log("La connection n'est pas encore ouverte, veuillez réessayer plus tard");
 			}
 		}
@@ -152,17 +146,10 @@
 				_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(msg)});
 				if(message!='636f6e6e656374e9'){
 					console.log('message envoyé à',name,':',msg);
-					var M = Messages.find((el)=>el.id==name);
-					if(!M){
-						var group = new Group(name);
-						group.addMessage(msg);
-						Messages.push(group);
-					}else{
-						M.addMessage(msg);
-					}
+					group.addMessage(msg);
 				}
 			}else{
-				Open(name);
+				open(name);
 				console.log("La connection n'est pas encore ouverte, veuillez réessayer plus tard");
 			}
 		}
@@ -170,8 +157,9 @@
 	}
 
 	function Group(name){
-		this.id=name;
+		this.name=name;
 		this.msgs=[];
+		this.connectes=[];
 	}
 
 	Group.prototype.addMessage=function(msg){
@@ -184,7 +172,6 @@
 		this.sender=sender;
 		this.time=Date.now();
 		this.signature=uuid.v4(this);
-		return this
 	}
 
 	Message.prototype=Object.create(window.Object.prototype);
