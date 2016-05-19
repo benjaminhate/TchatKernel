@@ -114,11 +114,8 @@
 					var Connections = _.keys(connectedPeers);
 					var Diff = _.difference(Clients,Connections,[ID]);
 					var connectionCount = Diff.length < 2 ? Diff.length : 2;
-					_.times(connectionCount, ()=>{
-						var randomPeer = _.sample(Diff)
-						open('@'+randomPeer)
-						Diff = _.difference(Diff,[randomPeer])
-					});
+					_.sampleSize(Diff,connectionCount)
+						.forEach(peer=>open('@'+peer))
 				}
 			}
 		}
