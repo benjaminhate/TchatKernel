@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Test 2 WebRTC</title>	
+</head>
+
+<body>
+
+<script src="http://cdn.peerjs.com/0.3/peer.js"></script>
+<script src="node_modules/lodash/lodash.js"></script>
+<script src="node_modules/node-uuid/uuid.js"></script>
+<script src="./Events.js"></script>
+
+<script type="text/javascript">
+	var http = new XMLHttpRequest();
+	var connectedPeers={};
+	var ID;
+	var Communautes=[];
+	var limite = 20;
+	var cleared=false;
+
+	function Tchat(){}
+
+	Tchat.prototype = Object.create(window.EventEmitter.prototype);
+
+	var peer = new Peer({host:'192.168.1.102',port:8080});
+	peer.on('open',function(id){
+		console.log('My peer ID is: ' + id);
+		ID = id;
+	});
+
+	peer.on('connection',connect);
+
+	var tchat = new Tchat();
+
+	tchat.on('message', console.log.bind(console, 'message'))
+	tchat.on('deconnection', console.log.bind(console, 'déconnection'))
+	tchat.on('connection',console.log.bind(console,'connection'))
+
+	var connectedInterval=setInterval(connected,1000);
+
+	var grouplistInterval=setInterval(grouplist,2000);
+
+
+	function connected(){
+		Communautes
+			.filter(group=>group.connectes.length<limite && group.name.charAt(0) == '#')
+			.forEach(group=>send(group.name,'636f6e6e656374e9'));
+	}
+
+	function grouplist(){
+		Communautes.forEach((communaute)=>{
+			if(communaute.connectes.length<limite){
+				tchat.emit(communaute.name,communaute.connectes);
+			}else{
+				tchat.emit(communaute.name,'Groupe trop grand');
+			}
+			communaute.connectes.length=0;
+		});
+	}
+
+	function connect(c){
+		c.on('data',function(msg){
+			if(msg.destination.charAt(0)=='#'){
+				var group = Communautes.find((group)=>group.name==msg.destination)
+				if(group){
+					var isMsgToRelay = group.addMessage(msg);
+					if(isMsgToRelay){
+						broadcast(msg);
+						if(msg.msg != '636f6e6e656374e9') tchat.emit('message',msg);
+					}
+				}else{
+					return
+				}
+			}
+
+			if(msg.destination.charAt(0)=='@'){
+				var privateName = msg.sender=='@'+ID ? msg.destination : msg.sender
+				var group = Communautes.find((group)=>group.name==privateName)
+				if(group){
+					group.addMessage(msg)
+				}else{
+					var newGroup = new Group(privateName)
+					newGroup.addMessage(msg)
+					Communautes.push(newGroup)
+				}
+				if(msg.sender!='@'+ID) c.send(msg)
+				tchat.emit('message',msg);
+			}
+		});
+
+		c.on('close',function(){
+			tchat.emit('deconnection','@'+c.peer);
+			delete connectedPeers[c.peer];
+		});
+
+		connectedPeers[c.peer]=1;
+	}
+
+	function broadcast(data){
+		_.forEach(peer.connections,(co)=>{if(co[0].open) co[0].send(data)});
+	}
+
+	function open(name){
+		name = name.toLowerCase();
+		if(name.charAt(0)=='#'){
+			if(!Communautes.find((group)=>group.name==name)){
+				Communautes.push(new Group(name));
+				name = name.replace('#','%23');
+				http.open('GET','/send/'+name+'/'+ID);
+				http.send();
+				http.onload = function(){
+					var Clients=JSON.parse(http.response);
+					var Connections = _.keys(connectedPeers);
+					var Diff = _.difference(Clients,Connections,[ID]);
+					var connectionCount = Diff.length < 2 ? Diff.length : 2;
+					_.sampleSize(Diff,connectionCount)
+						.forEach(peer=>open('@'+peer))
+				}
+			}
+		}
+
+		if(name.charAt(0)=='@'){
+			name = name.replace('@','');
+			if(!connectedPeers[name]){
+				var c=peer.connect(name);
+				c.on('open', function() {
+					tchat.emit('connection','@'+name);
+					connect(c);
+					c.on('error', console.warn.bind(console));
+				});
+				connectedPeers[name]=1;
+			}
+		}
+	}
+
+	function send(name,message){
+		name = name.toLowerCase();
+		var msg = new Message(name,message,'@'+ID);
+		if(name.charAt(0)=='@'){
+			name = name.replace('@','');
+			var connections = peer.connections[name];
+			if(connections && connections[0].open){
+				connections[0].send(msg);
+			}else{
+				open('@'+name);
+				console.warn("La connection est en train de s'ouvrir, veuillez réessayer plus tard");
+			}
+		}
+
+		if(name.charAt(0)=='#'){
+			var group = _.find(Communautes,(el)=>el.name==name);
+			if(group){
+				broadcast(msg)
+				group.addMessage(msg);
+				if(msg.msg != '636f6e6e656374e9') tchat.emit('message',msg);
+			}else{
+				open(name);
+				console.warn("La connection est en train de s'ouvrir, veuillez réessayer plus tard");
+			}
+		}
+
+	}
+
+	function clear(){
+		peer.destroy();
+		clearInterval(connectedInterval)
+		clearInterval(grouplistInterval)
+	}
+
+	function Group(name){
+		this.name=name;
+		this.msgs=[];
+		this.msgsconnectes=[];
+		this.connectes=[];
+	}
+
+	Group.prototype._addMessage=function(msg){
+		if(this.msgs.length>200) this.msgs.shift();
+		this.msgs.push(msg);
+	};
+
+	Group.prototype._addMessageConnecte=function(msg){
+		if(this.msgsconnectes.length>500) this.msgsconnectes.shift()
+		this.msgsconnectes.push(msg);
+	};
+
+	Group.prototype._addConnectes=function(sender){
+		var duplicatedSender = _.find(this.connectes,id=>id==sender)
+		if(!duplicatedSender) this.connectes.push(sender);
+	}
+
+	Group.prototype.addMessage=function(data){
+		if(data.msg=='636f6e6e656374e9') {
+			this._addConnectes(data.sender);			
+			var duplicatedMsg = this.msgsconnectes.find((el)=>el.signature==data.signature)
+			if(!duplicatedMsg) this._addMessageConnecte(data);
+			return !duplicatedMsg
+		}else{
+			var duplicatedMsg = this.msgs.find((el)=>el.signature==data.signature)
+			if(!duplicatedMsg) this._addMessage(data);
+			return !duplicatedMsg
+		}
+	}
+
+	function Message(dest,msg,sender){
+		this.destination=dest;
+		this.msg=msg;
+		this.sender=sender;
+		this.time=Date.now();
+		this.signature=uuid.v4(this);
+	}
+
+	Message.prototype=Object.create(window.Object.prototype);
+
+	// window.onunload = window.onbeforeunload = function(e) {
+	// 	if (!!peer && !peer.destroyed) {
+	// 		peer.destroy();
+	// 	}
+	// };
+</script>
+
+</body>
+</html>
