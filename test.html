@@ -17,6 +17,7 @@
 	var ID;
 	var Communautes=[];
 	var limite = 20;
+	var cleared=false;
 
 	function Tchat(){}
 
@@ -33,11 +34,13 @@
 	var tchat = new Tchat();
 
 	tchat.on('message', console.log.bind(console, 'message'))
-	tchat.on('deconnection', console.log.bind(console, 'deconection'))
+	tchat.on('deconnection', console.log.bind(console, 'déconnection'))
+	tchat.on('connection',console.log.bind(console,'connection'))
 
-	setInterval(connected,1000);
+	var connectedInterval=setInterval(connected,1000);
 
-	setInterval(grouplist,2000);
+	var grouplistInterval=setInterval(grouplist,2000);
+
 
 	function connected(){
 		Communautes
@@ -110,9 +113,12 @@
 					var Clients=JSON.parse(http.response);
 					var Connections = _.keys(connectedPeers);
 					var Diff = _.difference(Clients,Connections,[ID]);
-
 					var connectionCount = Diff.length < 2 ? Diff.length : 2;
-					_.times(connectionCount, ()=>open('@'+_.sample(Diff)));
+					_.times(connectionCount, ()=>{
+						var randomPeer = _.sample(Diff)
+						open('@'+randomPeer)
+						Diff = _.difference(Diff,[randomPeer])
+					});
 				}
 			}
 		}
@@ -157,6 +163,12 @@
 			}
 		}
 
+	}
+
+	function clear(){
+		peer.destroy();
+		clearInterval(connectedInterval)
+		clearInterval(grouplistInterval)
 	}
 
 	function Group(name){
