@@ -32,12 +32,17 @@
 
 	var tchat = new Tchat();
 
+	tchat.on('message', console.log.bind(console, 'message'))
+	tchat.on('deconnection', console.log.bind(console, 'deconection'))
+
 	setInterval(connected,1000);
 
 	setInterval(grouplist,2000);
 
 	function connected(){
-		Communautes.forEach((el)=>{if(el.connectes.length<limite) send(el.name,'636f6e6e656374e9')});
+		Communautes
+			.filter(group=>group.connectes.length<limite && group.name.charAt(0) == '#')
+			.forEach(group=>send(group.name,'636f6e6e656374e9'));
 	}
 
 	function grouplist(){
@@ -52,34 +57,45 @@
 	}
 
 	function connect(c){
-		c.on('data',function(data){
-			if(data.destination.charAt(0)=='#'){
-				if(data.msg=='636f6e6e656374e9'){
-					var group=_.find(Communautes,(el)=>el.name==data.destination);
-					if(group && !_.find(group.connectes,(el)=>el==data.sender)){
-						group.connectes.push(data.sender);
+		c.on('data',function(msg){
+			if(msg.destination.charAt(0)=='#'){
+				var group = Communautes.find((group)=>group.name==msg.destination)
+				if(group){
+					var isMsgToRelay = group.addMessage(msg);
+					if(isMsgToRelay){
+						broadcast(msg);
+						if(msg.msg != '636f6e6e656374e9') tchat.emit('message',msg);
 					}
 				}else{
-					console.log('message reçu de',c.peer,':',data);
+					return
 				}
-				var M = Communautes.find((group)=>group.name==data.destination)
-				if(M){
-					var m = M.msgs.find((el)=>el.signature==data.signature);
-					if(!m){
-						_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(data)});
-						M.addMessage(data);
-					}
+			}
+
+			if(msg.destination.charAt(0)=='@'){
+				var privateName = msg.sender=='@'+ID ? msg.destination : msg.sender
+				var group = Communautes.find((group)=>group.name==privateName)
+				if(group){
+					group.addMessage(msg)
+				}else{
+					var newGroup = new Group(privateName)
+					newGroup.addMessage(msg)
+					Communautes.push(newGroup)
 				}
-			}else{console.log('message reçu de',c.peer,':',data);}
-			tchat.emit('message',data);
+				if(msg.sender!='@'+ID) c.send(msg)
+				tchat.emit('message',msg);
+			}
 		});
+
 		c.on('close',function(){
-			console.log('connection fermée avec',c.peer);
 			tchat.emit('deconnection','@'+c.peer);
-			Communautes.forEach(group => { _.remove(group.connectes, el=>el==c.peer)});
 			delete connectedPeers[c.peer];
 		});
+
 		connectedPeers[c.peer]=1;
+	}
+
+	function broadcast(data){
+		_.forEach(peer.connections,(co)=>{if(co[0].open) co[0].send(data)});
 	}
 
 	function open(name){
@@ -94,21 +110,21 @@
 					var Clients=JSON.parse(http.response);
 					var Connections = _.keys(connectedPeers);
 					var Diff = _.difference(Clients,Connections,[ID]);
-					_.times(Diff.length, ()=>open('@'+_.sample(Diff)));
+
+					var connectionCount = Diff.length < 2 ? Diff.length : 2;
+					_.times(connectionCount, ()=>open('@'+_.sample(Diff)));
 				}
-			}else{console.log('Vous êtes déjà connecté au groupe',name);}
-		};
+			}
+		}
+
 		if(name.charAt(0)=='@'){
 			name = name.replace('@','');
 			if(!connectedPeers[name]){
 				var c=peer.connect(name);
 				c.on('open', function() {
-					console.log('connection ouverte avec',name);
 					tchat.emit('connection','@'+name);
 					connect(c);
-
-					c.on('error', console.log.bind(console));
-
+					c.on('error', console.warn.bind(console));
 				});
 				connectedPeers[name]=1;
 			}
@@ -117,40 +133,27 @@
 
 	function send(name,message){
 		name = name.toLowerCase();
-		var msg = new Message(name,message,ID);
+		var msg = new Message(name,message,'@'+ID);
 		if(name.charAt(0)=='@'){
 			name = name.replace('@','');
 			var connections = peer.connections[name];
 			if(connections && connections[0].open){
 				connections[0].send(msg);
-				if(message!='636f6e6e656374e9'){
-					console.log('message envoyé à',name,':',msg);
-					var M = Communautes.find((el)=>el.name==name);
-					if(!M){
-						var group = new Group(name);
-						group.addMessage(msg);
-						Communautes.push(group);
-					}else{
-						M.addMessage(msg);
-					}
-				}
 			}else{
 				open('@'+name);
-				console.log("La connection n'est pas encore ouverte, veuillez réessayer plus tard");
+				console.warn("La connection est en train de s'ouvrir, veuillez réessayer plus tard");
 			}
 		}
 
 		if(name.charAt(0)=='#'){
 			var group = _.find(Communautes,(el)=>el.name==name);
 			if(group){
-				_.forEach(peer.connections,(el)=>{if(el[0].open) el[0].send(msg)});
-				if(message!='636f6e6e656374e9'){
-					console.log('message envoyé à',name,':',msg);
-					group.addMessage(msg);
-				}
+				broadcast(msg)
+				group.addMessage(msg);
+				if(msg.msg != '636f6e6e656374e9') tchat.emit('message',msg);
 			}else{
 				open(name);
-				console.log("La connection n'est pas encore ouverte, veuillez réessayer plus tard");
+				console.warn("La connection est en train de s'ouvrir, veuillez réessayer plus tard");
 			}
 		}
 
@@ -159,12 +162,37 @@
 	function Group(name){
 		this.name=name;
 		this.msgs=[];
+		this.msgsconnectes=[];
 		this.connectes=[];
 	}
 
-	Group.prototype.addMessage=function(msg){
+	Group.prototype._addMessage=function(msg){
+		if(this.msgs.length>200) this.msgs.shift();
 		this.msgs.push(msg);
 	};
+
+	Group.prototype._addMessageConnecte=function(msg){
+		if(this.msgsconnectes.length>500) this.msgsconnectes.shift()
+		this.msgsconnectes.push(msg);
+	};
+
+	Group.prototype._addConnectes=function(sender){
+		var duplicatedSender = _.find(this.connectes,id=>id==sender)
+		if(!duplicatedSender) this.connectes.push(sender);
+	}
+
+	Group.prototype.addMessage=function(data){
+		if(data.msg=='636f6e6e656374e9') {
+			this._addConnectes(data.sender);			
+			var duplicatedMsg = this.msgsconnectes.find((el)=>el.signature==data.signature)
+			if(!duplicatedMsg) this._addMessageConnecte(data);
+			return !duplicatedMsg
+		}else{
+			var duplicatedMsg = this.msgs.find((el)=>el.signature==data.signature)
+			if(!duplicatedMsg) this._addMessage(data);
+			return !duplicatedMsg
+		}
+	}
 
 	function Message(dest,msg,sender){
 		this.destination=dest;
@@ -176,11 +204,11 @@
 
 	Message.prototype=Object.create(window.Object.prototype);
 
-	window.onunload = window.onbeforeunload = function(e) {
-		if (!!peer && !peer.destroyed) {
-			peer.destroy();
-		}
-	};
+	// window.onunload = window.onbeforeunload = function(e) {
+	// 	if (!!peer && !peer.destroyed) {
+	// 		peer.destroy();
+	// 	}
+	// };
 </script>
 
 </body>
