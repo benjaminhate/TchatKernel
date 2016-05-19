@@ -16,7 +16,7 @@ server.on('connection',function(id){
 
 server.on('disconnect',function(id){
 	_.remove(Clients, el=>el==id);
-	Communautes.forEach(group => { _.remove(group.clients, el=>el==id)});});
+	Communautes.forEach(group => {_.remove(group.clients, el=>el==id)})});
 
 function Group(name){
 	this.name=name;
