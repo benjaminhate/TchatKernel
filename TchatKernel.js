@@ -42,8 +42,10 @@ TchatKernel.prototype.grouplist=function(){
 		}
 		if(communaute.connectes.length<this.limite){
 			this.emit(communaute.name,communaute.connectes);
+			this.emit('groupList', communaute.name, communaute.connectes)
 		}else{
 			this.emit(communaute.name,'Groupe trop grand');
+			this.emit('groupList', communaute.name, 'Groupe trop grand')
 		}
 		communaute.connectes.length=0;
 	});

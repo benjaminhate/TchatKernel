@@ -14,16 +14,7 @@
 <script src="./Tchat.js"></script>
 
 <script type="text/javascript">
-	var tchat = new TchatKernel()
-	var panel = new Tchat(tchat)
-	tchat.on('message', function(msg){
-		panel.addMessageToTab(msg)
-	})
-	tchat.on('deconnection', function(id){
-		panel.clearTab(id)
-	})
-	tchat.on('connection',console.log.bind(console,'connection'))
-	_.forEach(tchat.communautes,group=>tchat.on(group.name,()=>console.log('event',group.name)))
+	var panel = new Tchat()
 </script>
 
 </body>

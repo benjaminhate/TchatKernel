@@ -1,5 +1,17 @@
-function Tchat(tchat){
-	this.tchat=tchat
+function Tchat(){
+	this.tchat= new TchatKernel()
+
+	this.tchat.on('message', (msg)=>{
+		this.addMessageToTab(msg)
+	})
+
+	this.tchat.on('deconnection', (id)=>{
+		this.clearTab(id)
+	})
+
+	this.tchat.on('connection',console.log.bind(console,'connection'))
+
+	this.tchat.on('groupList', console.log.bind(console))
 }
 
 Tchat.prototype.addMessageToTab=function(msg){
