@@ -11,21 +11,19 @@
 <script src="node_modules/node-uuid/uuid.js"></script>
 <script src="./Events.js"></script>
 <script src="./TchatKernel.js"></script>
+<script src="./Tchat.js"></script>
 
 <script type="text/javascript">
 	var tchat = new TchatKernel()
-	tchat.open('#fr')
-
-	tchat.on('message', console.log.bind(console, 'message'))
-	// tchat.on('deconnection', console.log.bind(console, 'déconnection'))
+	var panel = new Tchat(tchat)
+	tchat.on('message', function(msg){
+		panel.addMessageToTab(msg)
+	})
+	tchat.on('deconnection', function(id){
+		panel.clearTab(id)
+	})
 	tchat.on('connection',console.log.bind(console,'connection'))
-
-
-
-	// setInterval(envoi,1000)
-	// function envoi(){
-	// 	tchat.send('#fr','coucou')
-	// }
+	_.forEach(tchat.communautes,group=>tchat.on(group.name,()=>console.log('event',group.name)))
 </script>
 
 </body>
